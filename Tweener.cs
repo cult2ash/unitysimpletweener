@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
+#region Tweener
 public class Tweener : MonoBehaviour
 {
 
@@ -71,6 +72,9 @@ public class Tweener : MonoBehaviour
 	}
 
 }
+#endregion
+
+////////////////////////////////////////////////////////////////////////////////////////
 
 public abstract class Tween<T> : Tween
 {
@@ -109,6 +113,9 @@ public abstract class Tween
 	int yoyoCounter = 0;
 	bool bSwap = false;
 	bool bPause = false;
+	
+	
+#region EaseType	
 
 	static public float linear (float start, float end, float value)
 	{
@@ -467,6 +474,7 @@ public abstract class Tween
 			return -0.5f * (a * Mathf.Pow (2, 10 * (value -= 1)) * Mathf.Sin ((value * d - s) * (2 * Mathf.PI) / p)) + start;
 		return a * Mathf.Pow (2, -10 * (value -= 1)) * Mathf.Sin ((value * d - s) * (2 * Mathf.PI) / p) * 0.5f + end + start;
 	}
+#endregion
 
 	public void Start ()
 	{
@@ -606,6 +614,10 @@ public class TweenDelay : Tween<float>
 	}
 
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#region Variety
 
 public class TweenAlpha : Tween<float>
 {
@@ -922,6 +934,12 @@ public class TweenParabola : Tween<Vector3>
 	
 }
 
+#endregion
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#region ExtensionClass
+
 public static class GameObjectExtension
 {
 	public static void AddTween (this GameObject obj, params Tween[] tw)
@@ -984,7 +1002,7 @@ public static class GameObjectExtension
 	
 }
 
-
+#endregion
 		
 		
 		
