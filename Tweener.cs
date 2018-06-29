@@ -1,19 +1,68 @@
 using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine.UI;
+using System;
+using UnityEditor.Graphs;
+#if TextMeshPro
+using TMPro;
+#endif
+#if UNITY_EDITOR
+using UnityEditor;
 
+[CustomEditor(typeof(Tweener))]
+public class TweenerInspector : Editor
+{
+	
+	void OnEnable()
+	{
+		
+	}
+
+    public override void OnInspectorGUI()
+    {
+
+        Tweener tween = (Tweener)target;
+        EditorUtility.SetDirty(tween);
+
+        for(int i=0;i<tween.tween.Count;i++)
+        {
+            EditorGUILayout.LabelField(tween.tween[i].ToString());
+
+        }
+
+    }
+}
+
+[System.Serializable]
+#endif
 #region Tweener
 public class Tweener : MonoBehaviour
 {
 	
 	bool bPause = false;
-	List<Tween> tween = new List<Tween> ();
+	[SerializeField]
+	public List<Tween> tween = new List<Tween> ();
 	
-	public void Flush ()
+	public void Flush (Tween _tw=null)
 	{
-		foreach (Tween tw in tween) {
-			tw._duration = 0.000000f;
+		if(_tw==null) {
+			foreach (Tween tw in tween) {
+				tw._duration = 0.000000f;
+				tw.update();
+			}
+		} else
+		{
+			_tw._duration = 0.000000f;
+			_tw.update();
 		}
 		
+	}
+
+	public void Kill(Tween tw=null)
+	{
+		if(tw==null)
+			tween.Clear();
+		else tween.Remove(tw);
 	}
 	
 	public void Pause ()
@@ -36,7 +85,7 @@ public class Tweener : MonoBehaviour
 		}
 	}
 	
-	public void AddTween (params Tween[] tw)
+	public Tween AddTween (params Tween[] tw)
 	{
 		
 		for (int i=0; i<tw.Length; i++) {
@@ -44,8 +93,8 @@ public class Tweener : MonoBehaviour
 			tw [i].Start ();
 			tween.Add (tw [i]);
 		}
-		
-		
+		return tw[0];
+
 	}
 	
 	public void Update ()
@@ -57,14 +106,16 @@ public class Tweener : MonoBehaviour
 			if (tween [i].update ()) {
 				tween.RemoveAt (i);
 				i--;
-				if (tween.Count == 0) {
-					Destroy (gameObject.GetComponent ("Tweener"));
-					return;
-				}
+				
 				
 			}
 		}
-		
+		if (tween.Count == 0)
+		{
+			Destroy(gameObject.GetComponent("Tweener"));
+			return;
+		}
+
 	}
 	
 }
@@ -75,7 +126,7 @@ public class Tweener : MonoBehaviour
 public abstract class Tween<T> : Tween
 {
 	protected T _start, _end, _current;
-	
+
 	public Tween (float del, EasingFunction easeType) : base(del, easeType)
 	{
 	}
@@ -93,6 +144,8 @@ public abstract class Tween<T> : Tween
 
 public abstract class Tween
 {
+	public static GameObject currentGameObject;
+
 	public Tweener tweener;
 	public delegate float EasingFunction (float start,float end,float Value);
 	
@@ -101,10 +154,9 @@ public abstract class Tween
 	public float _duration;
 	protected float delay0_1;
 	Tween[] next;
-	public delegate void DeleEvent (params object[] val);
-	
-	object[] eventArg;
-	DeleEvent delegateEvent;
+	public System.Action endAction;
+
+//	DeleEvent delegateEvent;
 	int repeatCounter = 0;
 	int yoyoCounter = 0;
 	bool bSwap = false;
@@ -112,7 +164,19 @@ public abstract class Tween
 	
 	
 	#region EaseType	
-	
+    //public static float GetBezierEase(float p0, float p1, float p2 ,float p3, float value)   <--- Totally Fake Code!!
+    //{
+
+    //    value = Mathf.Clamp01(value);
+    //    float OneMinusT = 1f - value;
+    //    return 
+    //        (OneMinusT * OneMinusT * OneMinusT * p0+
+    //        3f * OneMinusT * OneMinusT * value * p1 +
+    //        3f * OneMinusT * value * value * p2 +
+    //        value * value * value*p3);
+    //}     
+
+
 	static public float linear (float start, float end, float value)
 	{
 		return Mathf.Lerp (start, end, value);
@@ -473,7 +537,7 @@ public abstract class Tween
 		return a * Mathf.Pow (2, -10 * (value -= 1)) * Mathf.Sin ((value * d - s) * (2 * Mathf.PI) / p) * 0.5f + end + start;
 	}
 	#endregion
-	
+
 	public void Start ()
 	{
 		Init ();
@@ -509,10 +573,11 @@ public abstract class Tween
 		return this;
 	}
 	
-	public Tween EndEvent (DeleEvent _delegateEvent, params object[] _arg)
+
+	public Tween EndEvent (Action _delegateEvent)
 	{
-		eventArg = _arg;
-		delegateEvent = _delegateEvent;
+		
+		endAction = _delegateEvent;
 		return this;
 		
 	}
@@ -557,18 +622,26 @@ public abstract class Tween
 	{
 		if (yoyoCounter != 0) {
 			Swap ();
-			_progressTime = 0;
+			_progressTime = _progressTime-_duration;
 			
 			if (!bSwap) {
 				yoyoCounter--;
 				bSwap = true;
 			} else
 				bSwap = false;
+			if (endAction != null) {
+				currentGameObject = tweener.gameObject;
+				endAction ();
+			}
 			return false;
 		} else if (repeatCounter != 0) {
 			repeatCounter--;
 			//InitRepeat ();
-			_progressTime = 0;
+			_progressTime = _progressTime-_duration;
+			if (endAction != null) {
+				currentGameObject = tweener.gameObject;
+				endAction ();
+			}
 			return false;
 		}
 		
@@ -577,11 +650,13 @@ public abstract class Tween
 				
 				tweener.AddTween (next [i]);
 			}
-			
+
 		}
 		
-		if (delegateEvent != null)
-			delegateEvent (eventArg);
+		if (endAction != null) {
+			currentGameObject = tweener.gameObject;
+			endAction ();
+		}
 		return true;
 	}
 	
@@ -593,8 +668,10 @@ public abstract class Tween
 		return false;
 		
 	}
-}
 
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+#region Variety
 public class TweenDelay : Tween<float>
 {
 	public TweenDelay (float del) : base(del,null)
@@ -613,174 +690,163 @@ public class TweenDelay : Tween<float>
 	
 }
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#region Variety
-
-public class TweenAlpha : Tween<float>
-{
-	Color _cColor;
-	int typeIdx;
+public abstract class TweenHierachy<T> : Tween<Dictionary<GameObject,T>> where T : struct {
 	
-	public TweenAlpha (float _a, float _b, float del, EasingFunction easeType=null) : base(del,easeType)
+	public TweenHierachy (float del, EasingFunction easeType) : base(del, easeType)
 	{
-		_end = _b;
-		_start = _a;
-		
 	}
+	
+	protected Dictionary<GameObject,T> Values {
+		get {
+			var dic=new Dictionary<GameObject,T>();
+			T? t;
+			GameObject go;
+			foreach(var tr in tweener.GetComponentsInChildren<Transform>())
+			{
+				go=tr.gameObject;
+				t=GetObject(go);
+				if(t!=null)
+				{
+					dic.Add(go,t.Value);
+				}
+			}
+		
+			return dic;
+		}
+		set
+		{
+			foreach(var v in value)
+			{
+				SetObject(v.Key,v.Value);
+			}
+		}
+	}
+	
+	protected abstract T? GetObject(GameObject go);
+	protected abstract void SetObject(GameObject go, T t);
+	
+	public override void draw ()
+	{
+	}
+}
+
+public abstract class TweenColorBase : TweenHierachy<Color>
+{
+	protected Color endColor;
+	
+	public TweenColorBase (float del, EasingFunction easeType) : base(del, easeType)
+	{
+	}
+	
+	protected override void SetObject(GameObject go, Color c)
+	{
+		if (go.GetComponent<Text>())
+			go.GetComponent<Text>().color = c;
+		else if (go.GetComponent<SpriteRenderer>())
+		{
+			go.GetComponent<SpriteRenderer>().color = c;
+		}
+		else if (go.GetComponent<Image>())
+		{
+			go.GetComponent<Image>().color = c;
+		}
+		else if (go.GetComponent<Renderer>() && tweener.GetComponent<Renderer>().material.HasProperty("_Color"))
+		{
+			go.GetComponent<Renderer>().material.color = c;
+		}
+		else if (go.GetComponent<Light>())
+		{
+			go.GetComponent<Light>().color = c;
+		} 
+	}
+	
+	protected override Color? GetObject(GameObject go)
+	{
+		if (go.GetComponent<Text>())
+			return go.GetComponent<Text>().color;
+		if (go.GetComponent<SpriteRenderer>())
+		
+			return go.GetComponent<SpriteRenderer>().color;
+		
+		if (go.GetComponent<Image>())
+		
+			return go.GetComponent<Image>().color;
+		
+		if (go.GetComponent<Renderer>() && tweener.GetComponent<Renderer>().material.HasProperty("_Color"))
+		
+			return go.GetComponent<Renderer>().material.color;
+		
+		if (go.GetComponent<Light>())
+		
+			return go.GetComponent<Light>().color;
+
+		return null;
+	}
+	
+	
+}
+
+public class TweenAlpha : TweenColorBase
+{
 	
 	public TweenAlpha (float _a, float del, EasingFunction easeType=null) : base(del,easeType)
 	{
-		_end = _a;
-		_start = -1;
-		
-		
-	}
+       
+		endColor.a = _a;
+	
+    }
 	
 	public override void Init ()
 	{
-		
-		if (tweener.GetComponent<SpriteRenderer> ()) {
-			_cColor = tweener.GetComponent<SpriteRenderer> ().color;
-		} else if (tweener.GetComponent<Renderer> ()) {
-			if (tweener.GetComponent<Renderer> ().material.HasProperty ("_Color"))
-				_cColor = tweener.GetComponent<Renderer> ().material.color;
-		} else if (tweener.GetComponent<Light> ()) {
-			_cColor = tweener.GetComponent<Light> ().color;
-		} 
-
-		if ( _start == -1) {
-			
-			_start = _cColor.a;
-			
-			for (int i=0; i<tweener.transform.childCount; i++) {
-				(tweener.transform.GetChild (i).gameObject).AddTween (new TweenAlpha (_end, _duration));
-			}
-		} else {
-			
-			for (int i=0; i<tweener.transform.childCount; i++) {
-				(tweener.transform.GetChild (i).gameObject).AddTween (new TweenAlpha (_start, _end, _duration));
-			}
-			
-		}
+		_current=Values;
+		_start=Values;
 	}
 	
 	public override void draw ()
 	{
-		
-		_cColor.a = ease (_start, _end, delay0_1);
-		
-		
-		if (tweener.GetComponent<SpriteRenderer> ()) {
-			tweener.GetComponent<SpriteRenderer> ().color = _cColor;
-			
-		} else if (tweener.GetComponent<Renderer> ()) {
-			if (tweener.GetComponent<Renderer> ().material.HasProperty ("_Color"))
-				tweener.GetComponent<Renderer> ().material.color = _cColor;
-		} else if (tweener.GetComponent<Light> ()) {
-			tweener.GetComponent<Light> ().color = _cColor;
+		foreach (var s in _start)
+		{
+			Color c=s.Value;
+			c.a= ease (s.Value.a, endColor.a, delay0_1);
+			_current[s.Key]=c;
 		}
-		
+        
+		Values=_current;
 		
 	}
 }
 
-public class TweenUIColor : Tween<Color> {
-	public TweenUIColor (Color _c, float del, EasingFunction easeType=null) : base(del,easeType)
-	{
-		_end = _c;
-
-	}
-	public override void Init ()
-	{
-		_start = tweener.GetComponent<UnityEngine.UI.Image> ().color;
-	}
-	public override void draw ()
-	{
-
-		_current.a = ease (_start.a, _end.a, delay0_1);
-		_current.r = ease (_start.r, _end.r, delay0_1);
-		_current.g = ease (_start.g, _end.g, delay0_1);
-		_current.b = ease (_start.b, _end.b, delay0_1);
-		if (tweener.GetComponent<UnityEngine.UI.Image> ())
-			tweener.GetComponent<UnityEngine.UI.Image> ().color=_current;
-	}
-
-}
-
-public class TweenColor : Tween<Color>
+public class TweenColor : TweenColorBase
 {
-	
-	int typeIdx;
 	
 	public TweenColor (Color _c, float del, EasingFunction easeType=null) : base(del,easeType)
 	{
-		_end = _c;
+	 
+		endColor = _c;
+	
 	}
-
 	
 	public override void Init ()
 	{
-		if (tweener.GetComponent<SpriteRenderer> ()) {
-			_start = tweener.GetComponent<SpriteRenderer> ().color;
-		} else if (tweener.GetComponent<Renderer> ()) {
-			if (tweener.GetComponent<Renderer> ().material.HasProperty ("_Color"))
-				_start = tweener.GetComponent<Renderer> ().material.color;
-		} else if (tweener.GetComponent<Light> ()) {
-			_start = tweener.GetComponent<Light> ().color;
-		}
-
-		_current = new Color ();
-
-		GameObject go;
-		for (int i=0; i<tweener.transform.childCount; i++) {
-			go = tweener.transform.GetChild (i).gameObject;
-			if(go.activeSelf)
-				go.AddTween (new TweenColor (_end, _duration));
-		}
+		_current=Values;
+		_start=Values;
 	}
 	
 	public override void draw ()
 	{
-		
-		_current.a = ease (_start.a, _end.a, delay0_1);
-		_current.r = ease (_start.r, _end.r, delay0_1);
-		_current.g = ease (_start.g, _end.g, delay0_1);
-		_current.b = ease (_start.b, _end.b, delay0_1);
-
-		if (tweener.GetComponent<SpriteRenderer> ()) {
-			tweener.GetComponent<SpriteRenderer> ().color = _current;
-		} else if (tweener.GetComponent<Renderer> ()) {
-			if (tweener.GetComponent<Renderer> ().material.HasProperty ("_Color"))
-				tweener.GetComponent<Renderer> ().material.color = _current;
-		} else if (tweener.GetComponent<Light> ()) {
-			tweener.GetComponent<Light> ().color = _current;
+		foreach (var s in _start)
+		{
+			_current[s.Key]=new Color(
+					ease (s.Value.r, endColor.r, delay0_1),
+					ease (s.Value.g, endColor.g, delay0_1),
+					ease (s.Value.b, endColor.b, delay0_1),
+					ease (s.Value.a, endColor.a, delay0_1));
 		}
-		
+        
+		Values=_current;
 		
 	}
 }
-
-//public class TweenSoundFade : Tween<float>
-//{
-//	
-//	public TweenSoundFade (float px, float del, EasingFunction easeType=null) : base(del,easeType)
-//	{
-//		_end = px;
-//	}
-//	
-//	public override void Init ()
-//	{
-//		_start = Sound.volume;
-//		
-//	}
-//	
-//	public override void draw ()
-//	{
-//		Sound.volume = ease (_start, _end, delay0_1);
-//		
-//	}
-//}
 
 public class TweenScale : Tween<Vector3>
 {
@@ -790,7 +856,12 @@ public class TweenScale : Tween<Vector3>
 		_end = new Vector3 (px, py, pz);
 		
 	}
-	
+
+	public TweenScale (Vector3 scale, float del, EasingFunction easeType = null) : base(del, easeType)
+	{
+		_end = scale;
+	}
+
 	public override void Init ()
 	{
 		_start = tweener.transform.localScale;
@@ -810,9 +881,72 @@ public class TweenScale : Tween<Vector3>
 	}
 }
 
+public class TweenScaleTo : Tween<Vector3>
+{
+
+	public TweenScaleTo (float px, float py, float pz, float del, EasingFunction easeType=null) : base(del,easeType)
+	{
+		_end = new Vector3 (px, py, pz);
+
+	}
+
+	public override void Init ()
+	{
+		_start = tweener.transform.localScale;
+		_end.x = _start.x*_end.x;
+		_end.y = _start.y*_end.y;
+		_end.z = _start.z*_end.z;
+	}
+
+	public override void draw ()
+	{
+
+		_current.x = ease (_start.x, _end.x, delay0_1);
+		_current.y = ease (_start.y, _end.y, delay0_1);
+		_current.z = ease (_start.z, _end.z, delay0_1);
+
+		tweener.transform.localScale = _current;
+
+
+	}
+}
+
+public class TweenBezier : Tween<Vector3>
+{
+	Vector3 _mid;
+	public TweenBezier(Vector3 vec, Vector3 mid, float del, EasingFunction easeType = null) : base(del, easeType)
+	{
+		_end = vec;
+		_mid = mid;
+	}
+
+	public override void Init()
+	{
+		_start = tweener.transform.position;
+	}
+
+	public override void draw()
+	{
+		float t = Mathf.Clamp01(ease(0, 1, delay0_1));
+	
+		float oneMinusT = 1f - t;
+		_current=oneMinusT * oneMinusT * _start +
+				2f * oneMinusT * t * _mid +
+				t * t * _end;
+
+		tweener.transform.position = _current;
+	}
+
+
+}
+
 public class TweenMove : Tween<Vector3>
 {
-	
+	public TweenMove(Vector3 vec, float del, EasingFunction easeType = null) : base(del, easeType)
+	{
+		_end = vec;
+
+	}
 	public TweenMove (float px, float py, float pz, float del, EasingFunction easeType=null) : base(del,easeType)
 	{
 		_end = new Vector3 (px, py, pz);
@@ -842,10 +976,14 @@ public class TweenMoveTo : Tween<Vector3>
 	
 	public TweenMoveTo (float px, float py, float pz, float del, EasingFunction easeType=null) : base(del,easeType)
 	{
-		_end = new Vector3 (px, py, pz);
-		
+		_end = new Vector3(px, py, pz);
 	}
-	
+
+	public TweenMoveTo(Vector3 pos, float del, EasingFunction easeType = null) : base(del, easeType)
+	{
+		_end = pos;
+	}
+
 	public override void Init ()
 	{
 		_start = tweener.transform.localPosition;
@@ -881,9 +1019,9 @@ public class TweenMoveLocal : Tween<Vector3>
 	public override void draw ()
 	{
 		
-		_current.x = ease (_start [0], _end [0], delay0_1);
-		_current.y = ease (_start [1], _end [1], delay0_1);
-		_current.z = ease (_start [2], _end [2], delay0_1);
+		_current.x = ease (_start.x, _end.x, delay0_1);
+		_current.y = ease (_start.y, _end.y, delay0_1);
+		_current.z = ease (_start.z, _end.z, delay0_1);
 		
 		tweener.transform.localPosition = _current;
 		
@@ -891,26 +1029,68 @@ public class TweenMoveLocal : Tween<Vector3>
 	
 }
 
-public class Tween2DRotate : Tween<Quaternion>
-{
-	
-	public Tween2DRotate (float pz, float del, EasingFunction easeType=null) : base(del,easeType)
+public class TweenRotateTo : Tween<Vector3> {
+
+	public TweenRotateTo (float px,float py,float pz, float del, EasingFunction easeType=null) : base(del,easeType)
 	{
-		_end = Quaternion.Euler (new Vector3 (0, 0, -pz));
+		_end =new Vector3 (px, py, pz);
 	}
 
 
-	
 	public override void Init ()
 	{
-		_start = tweener.transform.localRotation;
+		_start = tweener.transform.eulerAngles;
 	}
-	
+
 	public override void draw ()
 	{
-		tweener.transform.localRotation = Quaternion.LerpUnclamped(_start, _end,ease (0, 1, delay0_1));
+		
+		tweener.transform.eulerAngles= Vector3.LerpUnclamped(_start, _end,ease (0, 1, delay0_1));
 	}
-	
+
+}
+
+public class TweenRotate : Tween<Vector3> {
+
+	public TweenRotate(float px,float py,float pz, float del, EasingFunction easeType=null) : base(del,easeType)
+	{
+		_end =new Vector3 (px, py, pz);
+	}
+
+
+	public override void Init ()
+	{
+		_start = tweener.transform.eulerAngles;
+		_end += _start;
+	}
+
+	public override void draw ()
+	{
+
+		tweener.transform.eulerAngles= Vector3.LerpUnclamped(_start, _end,ease (0, 1, delay0_1));
+	}
+
+}
+
+public class TweenSoundFade : Tween<float>
+{
+
+	public TweenSoundFade(float px, float del, EasingFunction easeType = null) : base(del, easeType)
+	{
+		_end = px;
+	}
+
+	public override void Init()
+	{
+		_start = Sound.BgVolume;
+
+	}
+
+	public override void draw()
+	{
+		Sound.BgVolume = ease(_start, _end, delay0_1);
+
+	}
 }
 
 public class TweenPop : TweenScale
@@ -938,7 +1118,8 @@ public class TweenParabola : Tween<Vector3>
 	
 	public override void Init ()
 	{
-		_start = tweener.transform.position;
+		_start = tweener.transform.localPosition;
+		_end += _start;
 	}
 	
 	public override void draw ()
@@ -948,10 +1129,100 @@ public class TweenParabola : Tween<Vector3>
 		_current.y = easeParabola (_start [1], _end [1], delay0_1);
 		_current.z = linear (_start [2], _end [2], delay0_1);
 		
-		tweener.transform.position = _current;
-		
+		tweener.transform.localPosition = _current;
+
 	}
+
+}
+
+public class TweenText : Tween<long> {
 	
+	Func<long, string> stringCoverter =null;
+
+	public TweenText(long start, long to, float del, Func<long,string> stringConvert=null,EasingFunction easeType=null) :base (del,easeType) {
+		_start = start;
+		_end = to;
+		stringCoverter= stringConvert;
+	}
+
+	public override void Init ()
+	{}
+
+	public override void draw () {
+		double d =	ease (0f, 1f, delay0_1);
+		_current = (long)(_start * (1f - d) + _end * d);
+		if(stringCoverter == null)
+			tweener.GetComponent<Text>().text = string.Format("{0:#,0}", _current);
+		else tweener.GetComponent<Text>().text = stringCoverter(_current);
+	}
+}
+#if TextMeshPro
+public class TweenTextMeshPro : Tween<long>
+{
+
+    Func<long, string> stringCoverter = null;
+
+    public TweenTextMeshPro(long start, long to, float del, Func<long, string> stringConvert = null, EasingFunction easeType = null) : base(del, easeType)
+    {
+        _start = start;
+        _end = to;
+        stringCoverter = stringConvert;
+    }
+
+    public override void Init()
+    { }
+
+    public override void draw()
+    {
+        double d = ease(0f, 1f, delay0_1);
+        _current = (long)(_start * (1f - d) + _end * d);
+        if (stringCoverter == null)
+            tweener.GetComponent<TextMeshPro>().text = string.Format("{0:#,0}", _current);
+        else tweener.GetComponent<TextMeshPro>().text = stringCoverter(_current);
+    }
+}
+public class TweenTextMeshProUGUI : Tween<long>
+{
+
+    Func<long, string> stringCoverter = null;
+
+    public TweenTextMeshProUGUI(long start, long to, float del, Func<long, string> stringConvert = null, EasingFunction easeType = null) : base(del, easeType)
+    {
+        _start = start;
+        _end = to;
+        stringCoverter = stringConvert;
+    }
+
+    public override void Init()
+    { }
+
+    public override void draw()
+    {
+        double d = ease(0f, 1f, delay0_1);
+        _current = (long)(_start * (1f - d) + _end * d);
+        if (stringCoverter == null)
+            tweener.GetComponent<TextMeshProUGUI>().text = string.Format("{0:#,0}", _current);
+        else tweener.GetComponent<TextMeshProUGUI>().text = stringCoverter(_current);
+    }
+}
+#endif
+public class TweenSlide : Tween<float>
+{
+    public TweenSlide(float to, float del, EasingFunction easeType = null) : base(del, easeType)
+    {
+        _end = to;
+    }
+    public override void Init()
+    {
+		_start = tweener.GetComponent<Image>().fillAmount;
+       
+    }
+    public override void draw()
+    {
+
+        _current = ease(_start, _end, delay0_1);
+		tweener.GetComponent<Image>().fillAmount = _current;
+    }
 }
 
 #endregion
@@ -962,7 +1233,7 @@ public class TweenParabola : Tween<Vector3>
 
 public static class GameObjectExtension
 {
-	public static void AddTween (this GameObject obj, params Tween[] tw)
+	public static Tween AddTween (this GameObject obj, params Tween[] tw)
 	{
 		Tweener tweener;
 		if ((tweener = obj.GetComponent<Tweener> ()) == null) {
@@ -970,16 +1241,21 @@ public static class GameObjectExtension
 			//			tweener.baseObj=this;
 		}
 		
-		tweener.AddTween (tw);
+		return tweener.AddTween (tw);
 	}
 	
-	public static void KillTween (this GameObject obj)
+	public static void KillTween (this GameObject obj,Tween tw=null)
 	{
-		
-		GameObject.Destroy (obj.GetComponent<Tweener> ());
+		Tweener tweener;
+
+		if ((tweener = obj.GetComponent<Tweener>()) == null)
+		{
+			return;
+		}
+		tweener.Kill(tw);
 		
 	}
-	
+
 	public static void FlushTween (this GameObject obj)
 	{
 		Tweener tweener;
@@ -987,10 +1263,7 @@ public static class GameObjectExtension
 		if ((tweener = obj.GetComponent<Tweener> ()) == null) {
 			return;
 		}
-		tweener.Flush ();
-		for (int i=0; i<tweener.transform.childCount; i++) {
-			(tweener.transform.GetChild (i).gameObject).FlushTween ();
-		}
+		tweener.Flush();
 		
 	}
 	
@@ -1002,9 +1275,7 @@ public static class GameObjectExtension
 			return;
 		}
 		tweener.Pause ();
-		for (int i=0; i<tweener.transform.childCount; i++) {
-			(tweener.transform.GetChild (i).gameObject).PauseTween ();
-		}
+		
 	}
 	
 	public static void ResumeTween (this GameObject obj)
@@ -1015,9 +1286,13 @@ public static class GameObjectExtension
 			return;
 		}
 		tweener.Resume ();
-		for (int i=0; i<tweener.transform.childCount; i++) {
-			(tweener.transform.GetChild (i).gameObject).ResumeTween ();
-		}
+		
+	}
+
+	public static Tween CallDelay (this GameObject obj, float delay, Action action,bool bLoop=false)
+	{
+		return obj.AddTween(new TweenDelay(delay).EndEvent(action).Repeat(bLoop?-1:0));
+
 	}
 	
 }
